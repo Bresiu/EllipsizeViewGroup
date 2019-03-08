@@ -5,7 +5,6 @@ import android.util.AttributeSet
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.core.view.doOnPreDraw
 
@@ -15,61 +14,119 @@ class EllipsizeViewGroup @JvmOverloads constructor(
 
     private val childViews = mutableListOf<View>()
     private var rootWidth = 0
-    var childWidth = 0
-    var space = 0
+    private var childWidth = 0
+    private var spaceAtStart = 0
+    private var spaceLeft = 0
+    private var afterPreDraw = false
+    private var isMoreVisible = false
 
     init {
         orientation = LinearLayout.HORIZONTAL
         doOnPreDraw {
-            rootWidth = measuredWidth
-            Log.d("BRS", "root width: $measuredWidth")
-            addViews()
-            Log.d("BRS", "Group size: $childCount")
+            Log.d("BRS", "doOnPreDraw")
+            afterPreDraw = true
+            setViews()
         }
     }
 
-    private fun addViews() {
-        if (childViews.isNotEmpty()) {
-            measureChildIfNeeded(childViews)
-            measureSpaceIfNeeded()
-            if (space < childViews.size) {
-                for (i in 0 until space - 1) {
+    fun setViews(views: List<View>) {
+        childViews.addAll(views)
+        setViews()
+    }
+
+    private fun setViews() {
+        Log.d("BRS", "setViews")
+        measureIfNeeded()
+        if (canAddViews()) {
+            Log.d("BRS", "setViews, childViews: ${childViews.size}, space for $spaceLeft")
+            if (spaceLeft < childViews.size) {
+                for (i in 0 until spaceLeft - 1) {
                     super.addView(childViews[i])
                 }
-                super.addView(addMoreView())
+                addMoreIcon()
             } else {
                 childViews.forEach {
                     super.addView(it)
                 }
             }
+            measureSpaceLeft()
             Log.d("BRS", "Adding ${childViews.size} child views")
-
+            childViews.clear()
+        } else if (shouldExchangeLastItemForMore()) {
+            Log.d("BRS", "shouldExchangeLastItemForMore")
+            exchangeLastItemForMore()
             childViews.clear()
         }
     }
 
-    private fun addMoreView(): View {
+    private fun exchangeLastItemForMore() {
+        removeViewAt(childCount - 1)
+        addMoreIcon()
+    }
+
+    private fun addMoreIcon() {
+        val view = inflateMoreView()
+        super.addView(view)
+        isMoreVisible = true
+        Log.d("BRS", "addMoreIcon")
+    }
+
+    private fun inflateMoreView(): View {
         return LayoutInflater.from(context).inflate(R.layout.more, this, false)
     }
 
-    // todo: support addView after preDraw
-    override fun addView(child: View, params: ViewGroup.LayoutParams) {
-        childViews.add(child)
-    }
-
-    private fun measureSpaceIfNeeded() {
-        if (space == 0) {
-            space = rootWidth / childWidth
-            Log.d("BRS", "Space for: $space")
+    private fun measureIfNeeded() {
+        if (shouldMeasure()) {
+            measureRoot()
+            measureChild()
+            measureSpace()
+            Log.d("BRS", "measure if needed; root: $rootWidth, child: $childWidth, space: $spaceAtStart")
         }
     }
 
-    private fun measureChildIfNeeded(views: List<View>) {
-        if (childWidth == 0) {
-            val view = views[0]
+    private fun measureRoot() {
+        rootWidth = measuredWidth
+        Log.d("BRS", "rootWidth: $rootWidth")
+    }
+
+    private fun measureChild() {
+        if (childViews.isNotEmpty()) {
+            val view = childViews[0]
             view.measure(0, 0)
             childWidth = view.measuredWidth
             Log.d("BRS", "child width: ${view.measuredWidth}")
         }
+    }
+
+    private fun measureSpace() {
+        spaceAtStart = rootWidth / childWidth
+        spaceLeft = spaceAtStart
+        Log.d("BRS", "space for: $spaceAtStart")
+    }
+
+    private fun measureSpaceLeft() {
+        spaceLeft = spaceAtStart - childCount
+        Log.d("BRS", "space left: $spaceLeft")
+    }
+
+    private fun shouldMeasure(): Boolean {
+        return !allMeasured() && readyToMeasure()
+    }
+
+    private fun allMeasured(): Boolean {
+        return rootWidth > 0 && childWidth > 0
+    }
+
+    private fun readyToMeasure(): Boolean {
+        return childViews.isNotEmpty() && afterPreDraw
+    }
+
+    private fun canAddViews(): Boolean {
+        return allMeasured() && childViews.isNotEmpty() && spaceLeft > 0
+    }
+
+    private fun shouldExchangeLastItemForMore(): Boolean {
+        Log.d("BRS", "allMeasured: ${allMeasured()}, childViews.isNotEmpty: ${childViews.isNotEmpty()}, spaceLeft: $spaceLeft, isMoreVisible: $isMoreVisible")
+        return allMeasured() && childViews.isNotEmpty() && spaceLeft == 0 && !isMoreVisible
     }
 }
